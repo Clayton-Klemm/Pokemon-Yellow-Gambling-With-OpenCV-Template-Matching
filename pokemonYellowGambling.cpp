@@ -135,13 +135,13 @@ bool check_template(const RegionData& regionData, HWND hwnd) {
 States check_state(States current_state, const std::map<std::string, RegionData>& regions, HWND hwnd) {
 	switch (current_state) {
 	case START:
-		Sleep(8000);
+		Sleep(8000); // This gives us 8 seconds to click the game window and start the gamble.
 		return ALL_MOVING;
 	case ALL_MOVING:
 		if (check_template(regions.at("bar1"), hwnd)) {
 			std::cout << "Match for the first roller!" << std::endl;
 			SimulateKeyPress('x');
-			Sleep(1000);
+			Sleep(1000); // The game can only respond so fast to our inputs. 
 			return FIRST_STOPPED;
 		}
 		break;
