@@ -1,4 +1,7 @@
 # pokemonYellowGambling
+
+![game_window](https://github.com/Clayton-Klemm/Pokemon-Yellow-Gambling-With-OpenCV-Template-Matching/assets/36232582/a6b19e65-681a-477b-af18-ebf491f0a85f)
+
 This project uses OpenCV so make sure you install it. https://opencv.org/get-started/
 Once you have it extracted you'll need to configure visual studio to link the dll files in order to use OpenCV
 
