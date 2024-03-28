@@ -5,19 +5,8 @@
 #include <windows.h>
 #include <map>
 #include <filesystem>
-
-// state definition
-enum States {
-	START = 0,
-	ALL_MOVING = 1,
-	FIRST_STOPPED = 2,
-	SECOND_STOPPED = 3,
-	ALL_STOPPED = 4
-};
-
-
-// to store our templates (the bar regions)
-std::map<std::string, cv::Mat> templates;
+//#include <conio.h> // Include for _kbhit()
+#include <cstdlib> // For system()
 
 // Function for simulating a key press in Windows.
 void SimulateKeyPress(char key) {
@@ -49,126 +38,46 @@ void SimulateKeyPress(char key) {
 // - region: The rectangle defining the region to capture.
 // - hwnd: Handle to the window we are capturing from.
 cv::Mat capture_region(const cv::Rect& region, HWND hwnd) {
-	// Retrieve width and height from the specified capture region.
 	int width = region.width;
 	int height = region.height;
-
-	// Create a cv::Mat (an image container) to hold the screenshot data.
-	cv::Mat screenshot(height, width, CV_8UC4);
-
-	// Get the device context for the specified window (hwnd).
 	HDC hdcWindow = GetDC(hwnd);
-	if (!hdcWindow) {
-		std::cerr << "Failed to get device context!" << std::endl;
-		return screenshot; // If failed, return an empty screenshot.
-	}
-
-	// Create a memory device context that is compatible with the window's device context.
-	HDC hdcMemory = CreateCompatibleDC(hdcWindow);
-	if (!hdcMemory) {
-		std::cerr << "Failed to create compatible device context!" << std::endl;
-		ReleaseDC(hwnd, hdcWindow);
-		return screenshot; // If failed, return an empty screenshot and release acquired resources.
-	}
-
-	// Create a bitmap compatible with the window's device context to hold the screenshot.
+	HDC hdcMemDC = CreateCompatibleDC(hdcWindow);
 	HBITMAP hBitmap = CreateCompatibleBitmap(hdcWindow, width, height);
-	if (!hBitmap) {
-		std::cerr << "Failed to create compatible bitmap!" << std::endl;
-		DeleteDC(hdcMemory); // Release the memory device context.
-		ReleaseDC(hwnd, hdcWindow); // Release the window's device context.
-		return screenshot; // If failed, return an empty screenshot and release acquired resources.
-	}
-
-	// Select the new bitmap into the memory device context.
-	HBITMAP hOldBitmap = (HBITMAP)SelectObject(hdcMemory, hBitmap);
-	if (!hOldBitmap) {
-		std::cerr << "Failed to select object into memory device context!" << std::endl;
-		DeleteObject(hBitmap); // Delete the bitmap.
-		DeleteDC(hdcMemory); // Release the memory device context.
-		ReleaseDC(hwnd, hdcWindow); // Release the window's device context.
-		return screenshot; // If failed, return an empty screenshot and release acquired resources.
-	}
-
-	// Copy the specified region from the window's device context to the memory device context.
-	BitBlt(hdcMemory, 0, 0, width, height, hdcWindow, region.x, region.y, SRCCOPY);
-
-	// Initialize the BITMAPINFOHEADER structure for retrieving the bitmap data.
+	HBITMAP hOldBitmap = (HBITMAP)SelectObject(hdcMemDC, hBitmap);
+	BitBlt(hdcMemDC, 0, 0, width, height, hdcWindow, region.x, region.y, SRCCOPY);
+	SelectObject(hdcMemDC, hOldBitmap);
 	BITMAPINFOHEADER bi = { 0 };
 	bi.biSize = sizeof(BITMAPINFOHEADER);
 	bi.biWidth = width;
-	bi.biHeight = -height; // Negative height indicates top-down orientation.
+	bi.biHeight = -height; // Negative indicates a top-down DIB
 	bi.biPlanes = 1;
-	bi.biBitCount = 32; // 32 bits-per-pixel.
-	bi.biCompression = BI_RGB; // No compression.
-
-	// Retrieve the bitmap data and store it in the cv::Mat container.
-	GetDIBits(hdcMemory, hBitmap, 0, height, screenshot.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
-
-	// Clean up: Restore the old bitmap, delete created objects, and release device contexts.
-	SelectObject(hdcMemory, hOldBitmap);
+	bi.biBitCount = 32;
+	bi.biCompression = BI_RGB;
+	cv::Mat mat(height, width, CV_8UC4);
+	GetDIBits(hdcMemDC, hBitmap, 0, height, mat.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+	// Convert to grayscale
+	cv::Mat matGray;
+	cv::cvtColor(mat, matGray, cv::COLOR_BGR2GRAY);
 	DeleteObject(hBitmap);
-	DeleteDC(hdcMemory);
+	DeleteDC(hdcMemDC);
 	ReleaseDC(hwnd, hdcWindow);
-
-	return screenshot; // Return the captured screenshot.
+	return matGray; // Return the grayscale image
 }
 
-
-struct RegionData {
-	cv::Rect roi;
-	cv::Mat templateImg;
-};
-
-
-// function for checking if the template is matching
-bool check_template(const RegionData& regionData, HWND hwnd) {
-	cv::Mat captured = capture_region(regionData.roi, hwnd);
+bool check_template(const cv::Rect roi_search, const cv::Mat autoCropBar, double precision,
+	cv::Mat &last_captured,HWND hwnd) {
+	cv::Mat captured = capture_region(roi_search, hwnd);
+	last_captured = captured;
 	cv::Mat result;
-	cv::matchTemplate(captured, regionData.templateImg, result, cv::TM_SQDIFF_NORMED);
+
+	cv::matchTemplate(captured, autoCropBar, result, cv::TM_SQDIFF_NORMED);
 	double minVal;
 	cv::minMaxLoc(result, &minVal, nullptr, nullptr, nullptr);
-	return minVal < .05;
+	return minVal < precision;
 }
 
-// Modified check_state function to use the RegionData
-States check_state(States current_state, const std::map<std::string, RegionData>& regions, HWND hwnd) {
-	switch (current_state) {
-	case START:
-		Sleep(8000); // This gives us 8 seconds to click the game window and start the gamble.
-		return ALL_MOVING;
-	case ALL_MOVING:
-		if (check_template(regions.at("bar1"), hwnd)) {
-			std::cout << "Match for the first roller!" << std::endl;
-			SimulateKeyPress('x');
-			Sleep(1000); // The game can only respond so fast to our inputs. 
-			return FIRST_STOPPED;
-		}
-		break;
-	case FIRST_STOPPED:
-		if (check_template(regions.at("bar2"), hwnd)) {
-			std::cout << "Match for the second roller!" << std::endl;
-			SimulateKeyPress('x');
-			Sleep(1000);
-			return SECOND_STOPPED;
-		}
-		break;
-	case SECOND_STOPPED:
-		if (check_template(regions.at("bar3"), hwnd)) {
-			std::cout << "Match for the third roller!" << std::endl;
-			SimulateKeyPress('x');
-			Sleep(1000);
-			return ALL_STOPPED;
-		}
-		break;
-	default:
-		break;
-	}
-	return current_state;
-}
 int main()
 {
-	// Find the window using its title
 	const char* windowTitle = "RetroArch SameBoy 0.15.4 0913833";
 	HWND hwnd = FindWindowA(NULL, windowTitle);
 	// Ensure the target window is found
@@ -181,50 +90,110 @@ int main()
 	GetClientRect(hwnd, &windowRect);
 	int width = windowRect.right - windowRect.left;
 	int height = windowRect.bottom - windowRect.top;
-	// Create an OpenCV matrix to hold the screenshot
-	cv::Mat screenshot(height, width, CV_8UC4);
-	HDC hdcWindow = GetDC(hwnd);
-	HDC hdcMemory = CreateCompatibleDC(hdcWindow); // creates a virtual drawing surface in memory that is compatible with the provided device context
-	HBITMAP hBitmap = CreateCompatibleBitmap(hdcWindow, width, height);
-	HBITMAP hOldBitmap = (HBITMAP)SelectObject(hdcMemory, hBitmap);
-	// Copy the window's image to the memory device context
-	BitBlt(hdcMemory, 0, 0, width, height, hdcWindow, 0, 0, SRCCOPY);
-	BITMAPINFOHEADER bi = { 0 };
-	bi.biSize = sizeof(BITMAPINFOHEADER);
-	bi.biWidth = width;
-	bi.biHeight = -height;  // Negative to ensure it's top-down
-	bi.biPlanes = 1;
-	bi.biBitCount = 32;     // Using 32-bit color
-	bi.biCompression = BI_RGB;
-	// Transfer data from the memory device context to the screenshot matrix
-	GetDIBits(hdcMemory, hBitmap, 0, height, screenshot.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
-	std::map<std::string, RegionData> regions;
+
+	cv::Mat screenshot = capture_region(cv::Rect(0, 0, width, height), hwnd);
+
+
+
+	/////////////////////////////////////// fine tuning regions ////////////////////////////////////////
+	//cv::Rect roi_temp = cv::selectROI("select region",screenshot);
+	//cv::destroyAllWindows();
+
+	//// save our selected region and print the coordinates out, are the coordinates window relative?
+	//std::cout << "Region of window: " << std::endl;
+	//std::cout << "X: " << windowRect.left << std::endl;
+	//std::cout << "Y: " << windowRect.top << std::endl;
+	//std::cout << "Width: " << windowRect.right << std::endl;
+	//std::cout << "Height: " << windowRect.bottom << std::endl;
+
+	//std::cout << "Region of fine tune: " << std::endl;
+	//std::cout << "X: " << roi_temp.x << std::endl;
+	//std::cout << "Y: " << roi_temp.y << std::endl;
+	//std::cout << "Width: " << roi_temp.width << std::endl;
+	//std::cout << "Height: " << roi_temp.height << std::endl;
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+	// create a directory to store our images to disk for debugging purposes
 	try {
 		// Create directory if it doesn't exist
 		std::filesystem::path dir("roi_templates");
 		if (!std::filesystem::exists(dir)) {
 			std::filesystem::create_directory(dir);
 		}
+	}
+	catch (const std::exception& e) {
+		std::cerr << "Error in detecting or creating folder" << e.what() << std::endl;
+	}
+	
+	// our calculated auto crop for bar 1
+	int calc_x_bar1 = .2458 * windowRect.right; // this hardcoded value was tediously found via selecting region
+										   // and experimentation. Current strategy selecting middle of bars
+	int calc_y = .3333 * windowRect.bottom;
+	int calc_width = .1094 * windowRect.right;
+	int calc_height = .1169 * windowRect.bottom;
+	cv::Mat autoCropBar1 = screenshot(cv::Rect(calc_x_bar1, calc_y, calc_width, calc_height));
+	cv::imwrite("roi_templates/auto_crop_bar1.png", autoCropBar1);
 
-		for (const auto name : { "bar1", "bar2", "bar3" }) {
-			cv::Rect selectedRegion = cv::selectROI("Select " + std::string(name) + " bounding box location", capture_region(cv::Rect(0, 0, width, height), hwnd));
-			cv::Mat temp = capture_region(selectedRegion, hwnd);
-			regions[name] = { selectedRegion, temp };
 
-			// save our captured regions for diagnostic purposes
-			std::filesystem::path filePath = dir / name;
-			filePath += ".png";
-			cv::imwrite(filePath.string(), temp);
-			cv::destroyAllWindows();
+	// our calculated auto crop for bar 2
+	int calc_x_bar2 = .4479 * windowRect.right;
+	cv::Mat autoCropBar2 = screenshot(cv::Rect(calc_x_bar2, calc_y, calc_width, calc_height));
+	cv::imwrite("roi_templates/auto_crop_bar2.png", autoCropBar2);
+
+	// our calculated auto crop for bar 3
+	int calc_x_bar3 = .6479 * windowRect.right;
+	cv::Mat autoCropBar3 = screenshot(cv::Rect(calc_x_bar3, calc_y, calc_width, calc_height));
+	cv::imwrite("roi_templates/auto_crop_bar3.png", autoCropBar3);
+
+
+	// make sure window is active
+	SetForegroundWindow(hwnd);
+	Sleep(1000);
+	SimulateKeyPress('x');
+
+	// rect of our template
+	cv::Rect bar1_middle_rect = cv::Rect(calc_x_bar1, calc_y, calc_width, calc_height);
+	cv::Rect bar2_middle_rect = cv::Rect(calc_x_bar2, calc_y, calc_width, calc_height);
+	cv::Rect bar3_middle_rect = cv::Rect(calc_x_bar3, calc_y, calc_width, calc_height);
+
+
+	
+	// so we can debug what the last thing that has been seen after a match
+	cv::Mat lastCaptured;
+	Sleep(2000);
+	bool roller1 = false;
+	while (!roller1) {
+		roller1 = check_template(bar1_middle_rect, autoCropBar1, .125, lastCaptured, hwnd);
+		if (roller1) {
+			// try and get 7 in bottom position.
+			Sleep(50);
+			SimulateKeyPress('x');
+			cv::imwrite("roi_templates/matched_bar1.png", lastCaptured);
 		}
 	}
-	catch (const cv::Exception& e) {
-		std::cerr << "OpenCV Error: " << e.what() << std::endl;
+	Sleep(1000);
+	bool roller2 = false;
+	while (!roller2) {
+		roller2 = check_template(bar2_middle_rect, autoCropBar2, .05, lastCaptured, hwnd);
+		if (roller2) {
+			Sleep(50);
+			SimulateKeyPress('x');
+			cv::imwrite("roi_templates/matched_bar2.png", lastCaptured);
+		}
 	}
-	States currentState = START;
-	while (currentState != ALL_STOPPED) {
-		currentState = check_state(currentState, regions, hwnd);
-		Sleep(1);
+	Sleep(1000);
+	bool roller3 = false;
+	while (!roller3) {
+		roller3 = check_template(bar3_middle_rect, autoCropBar3, .1, lastCaptured, hwnd);
+		if (roller3) {
+			//Sleep(10);
+			SimulateKeyPress('x');
+			cv::imwrite("roi_templates/matched_bar3.png", lastCaptured);
+		}
 	}
+
+
+	//system("pause");
 	return 0;
 }
