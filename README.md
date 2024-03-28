@@ -1,4 +1,6 @@
 # Pokemon Yellow Gambling
+# Update!!! THE GAME CHEATS! :( 
+I thought it was a performance issue. However, after extensive testing, I came to the unfortunate truth that the game cheats. Upon looking at the decompiled assembly code of the ROM, my suspicion has been confirmed with the **'GameCornerSelectLuckySlotMachine'** script. [Pokémon Yellow ROM Decompile](https://github.com/pret/pokeyellow/blob/master/scripts/GameCorner.asm).
 
 ![Game Window](https://github.com/Clayton-Klemm/Pokemon-Yellow-Gambling-With-OpenCV-Template-Matching/assets/36232582/a6b19e65-681a-477b-af18-ebf491f0a85f)
 
