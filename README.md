@@ -4,6 +4,10 @@ I thought it was a performance issue. However, after extensive testing, I came t
 
 ![Game Window](https://github.com/Clayton-Klemm/Pokemon-Yellow-Gambling-With-OpenCV-Template-Matching/assets/36232582/a6b19e65-681a-477b-af18-ebf491f0a85f)
 
+https://github.com/Clayton-Klemm/Pokemon-Yellow-Gambling-With-OpenCV-Template-Matching/assets/36232582/7b831f33-0f21-4158-97ad-ebf61926d7c4
+
+
+
 This project uses **OpenCV**. Ensure you have it installed and properly configured.
 
 ### Installation and Configuration:
